@@ -16,14 +16,17 @@ router.get("/", async (req, res) => {
   const { fy, month } = req.query;
   try {
     const params = [];
-    let where = "where i.is_current = true";
+    // These conditions must live in the JOIN's ON clause, not a WHERE clause —
+    // filtering a LEFT JOIN with WHERE turns it back into an INNER JOIN and
+    // silently drops companies that have zero invoices (e.g. brand new ones).
+    let joinCond = "i.company_id = c.id and i.is_current = true";
     if (fy) {
       params.push(fy);
-      where += ` and i.financial_year = $${params.length}`;
+      joinCond += ` and i.financial_year = $${params.length}`;
     }
     if (month && month !== "All") {
       params.push(monthNameToNumber(month));
-      where += ` and extract(month from i.invoice_date) = $${params.length}`;
+      joinCond += ` and extract(month from i.invoice_date) = $${params.length}`;
     }
 
     const { rows } = await pool.query(
@@ -34,7 +37,7 @@ router.get("/", async (req, res) => {
               count(distinct i.id)               as invoice_count,
               count(distinct i.client_id)        as client_count
        from companies c
-       left join invoices i on i.company_id = c.id ${where}
+       left join invoices i on ${joinCond}
        group by c.id, c.name
        order by c.name`,
       params
